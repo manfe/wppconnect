@@ -37,6 +37,11 @@ export interface CreateConfig {
    */
   useChrome?: boolean;
   /**
+   * Use Playwright instead of Puppeteer
+   * @default false
+   */
+  usePlaywright?: boolean;
+  /**
    * Opens a debug session
    * @default false
    */
@@ -199,6 +204,7 @@ export const defaultOptions: CreateConfig = {
   headless: true,
   devtools: false,
   useChrome: true,
+  usePlaywright: false,
   debug: false,
   logQR: true,
   browserWS: '',

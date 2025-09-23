@@ -1,0 +1,9 @@
+{
+  "name": "wppconnect-playwright-example",
+  "version": "1.0.0",
+  "description": "Example using WPPConnect with Playwright",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  }
+}

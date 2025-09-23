@@ -25,6 +25,10 @@ import {
   needsToScan,
 } from '../../controllers/auth';
 import { initWhatsapp, injectApi } from '../../controllers/browser';
+import {
+  initWhatsappPlaywright,
+  injectApiPlaywright,
+} from '../../controllers/playwright-browser';
 import { defaultLogger, LogLevel } from '../../utils/logger';
 import { sleep } from '../../utils/sleep';
 import { evaluateAndReturn, scrapeImg } from '../helpers';
@@ -115,7 +119,12 @@ export class HostLayer {
 
     this.isInjected = false;
 
-    await injectApi(this.page, this.onLoadingScreen)
+    // Use appropriate injection function based on browser type
+    const injectionPromise = this.options.usePlaywright
+      ? injectApiPlaywright(this.page as any, this.onLoadingScreen)
+      : injectApi(this.page, this.onLoadingScreen);
+
+    await injectionPromise
       .then(() => {
         this.isInjected = true;
         this.log('verbose', 'wapi.js injected');
@@ -157,14 +166,27 @@ export class HostLayer {
 
     this.isStarted = true;
 
-    await initWhatsapp(
-      this.page,
-      null,
-      false,
-      this.options.whatsappVersion,
-      this.options.proxy,
-      this.log.bind(this)
-    );
+    // Use appropriate initialization function based on browser type
+    if (this.options.usePlaywright) {
+      await initWhatsappPlaywright(
+        this.page as any,
+        null,
+        false,
+        this.options.whatsappVersion,
+        this.options.proxy,
+        this.log.bind(this)
+      );
+    } else {
+      // Default to Puppeteer
+      await initWhatsapp(
+        this.page,
+        null,
+        false,
+        this.options.whatsappVersion,
+        this.options.proxy,
+        this.log.bind(this)
+      );
+    }
 
     await this.page.exposeFunction('checkQrCode', () => this.checkQrCode());
     /*await this.page.exposeFunction('loginByCode', (phone: string) =>

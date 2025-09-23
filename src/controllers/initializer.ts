@@ -18,6 +18,10 @@
 import { Whatsapp } from '../api/whatsapp';
 import { CreateConfig, defaultOptions } from '../config/create-config';
 import { initBrowser, getOrCreatePage } from './browser';
+import {
+  initPlaywrightBrowser,
+  getOrCreatePagePlaywright,
+} from './playwright-browser';
 import { checkUpdates, welcomeScreen } from './welcome';
 import { SocketState, StatusFind } from '../api/model/enum';
 import { Browser } from 'puppeteer';
@@ -163,26 +167,49 @@ export async function create(
       );
     }
 
-    // Initialize new browser
-    logger.info('Initializing browser...', { session, type: 'browser' });
-    browser = await initBrowser(session, mergedOptions, logger).catch((e) => {
-      if (mergedOptions.browserWS && mergedOptions.browserWS != '') {
-        logger.error(`Error when try to connect ${mergedOptions.browserWS}`, {
-          session,
-          type: 'browser',
-        });
-      } else {
-        logger.error(`Error no open browser`, {
-          session,
-          type: 'browser',
-        });
-      }
-      logger.error(e.message, {
+    // Initialize new browser based on selected automation framework
+    if (mergedOptions.usePlaywright) {
+      logger.info('Initializing Playwright browser...', {
         session,
-        type: 'browser',
+        type: 'playwright-browser',
       });
-      throw e;
-    });
+      browser = (await initPlaywrightBrowser(
+        session,
+        mergedOptions,
+        logger
+      ).catch((e) => {
+        logger.error('Error opening Playwright browser', {
+          session,
+          type: 'playwright-browser',
+        });
+        logger.error(e.message, {
+          session,
+          type: 'playwright-browser',
+        });
+        throw e;
+      })) as any;
+    } else {
+      // Default to Puppeteer
+      logger.info('Initializing browser...', { session, type: 'browser' });
+      browser = await initBrowser(session, mergedOptions, logger).catch((e) => {
+        if (mergedOptions.browserWS && mergedOptions.browserWS != '') {
+          logger.error(`Error when try to connect ${mergedOptions.browserWS}`, {
+            session,
+            type: 'browser',
+          });
+        } else {
+          logger.error(`Error no open browser`, {
+            session,
+            type: 'browser',
+          });
+        }
+        logger.error(e.message, {
+          session,
+          type: 'browser',
+        });
+        throw e;
+      });
+    }
 
     logger.http('checking headless...', {
       session,
@@ -208,34 +235,45 @@ export async function create(
     });
   }
 
-  (browser as Browser).on('targetdestroyed', async (target: any) => {
-    if (
-      typeof (browser as Browser).isConnected === 'function' &&
-      !(browser as Browser).isConnected()
-    ) {
-      return;
-    }
-    const pages = await browser.pages();
-    if (!pages.length) {
-      browser.close().catch(() => null);
-    }
-  });
+  // Only add Puppeteer-specific event listeners for Puppeteer browsers
+  if (mergedOptions.useChrome) {
+    (browser as Browser).on('targetdestroyed', async (target: any) => {
+      if (
+        typeof (browser as Browser).isConnected === 'function' &&
+        !(browser as Browser).isConnected()
+      ) {
+        return;
+      }
+      const pages = await browser.pages();
+      if (!pages.length) {
+        browser.close().catch(() => null);
+      }
+    });
 
-  (browser as Browser).on('disconnected', () => {
-    if (mergedOptions.browserWS) {
-      statusFind && statusFind('serverClose', session);
-    } else {
-      statusFind && statusFind('browserClose', session);
-    }
-  });
+    (browser as Browser).on('disconnected', () => {
+      if (mergedOptions.browserWS) {
+        statusFind && statusFind('serverClose', session);
+      } else {
+        statusFind && statusFind('browserClose', session);
+      }
+    });
+  }
 
   if (!page) {
-    // Initialize a page
-    page = await getOrCreatePage(browser);
+    // Initialize a page based on browser type
+    if (mergedOptions.usePlaywright) {
+      page = (await getOrCreatePagePlaywright(browser as any)) as any;
+    } else {
+      // Default to Puppeteer
+      page = await getOrCreatePage(browser);
+    }
   }
 
   if (page) {
-    await page.setBypassCSP(true);
+    // setBypassCSP is only available in Puppeteer
+    if (mergedOptions.useChrome) {
+      await page.setBypassCSP(true);
+    }
 
     const client = new Whatsapp(page, session, mergedOptions);
     client.catchQR = catchQR;

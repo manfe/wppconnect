@@ -19,8 +19,8 @@ const wppconnect = require('../../dist');
 wppconnect
   .create({
     headless: false,
-    useChrome: true,
-    usePlaywright: false,
+    useChrome: false,
+    usePlaywright: true, // Enable Playwright instead of Puppeteer
   })
   .then((client) => start(client))
   .catch((error) => {
@@ -31,15 +31,13 @@ function start(client) {
   client.onMessage((message) => {
     if (message.body === 'Hi' && message.isGroupMsg === false) {
       client
-        .sendText(message.from, 'Welcome to Wppconnect')
-        .then((result) => {})
+        .sendText(message.from, 'Welcome to WPPConnect with Playwright!')
+        .then((result) => {
+          console.log('Message sent successfully with Playwright');
+        })
         .catch((error) => {
-          console.error('Error when sending: ', error); //return error object
+          console.error('Error when sending: ', error);
         });
     }
-  });
-
-  client.onAck((ack) => {
-    console.log('ACK EVENT', ack);
   });
 }
