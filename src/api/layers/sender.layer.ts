@@ -16,19 +16,25 @@
  */
 
 import type {
+  AllMessageOptions,
   FileMessageOptions,
+  ForwardMessagesOptions,
   ListMessageOptions,
   LocationMessageOptions,
-  TextMessageOptions,
   PoolMessageOptions,
-  ForwardMessagesOptions,
-  AllMessageOptions,
   SendMessageOptions,
+  TextMessageOptions,
 } from '@wppconnect/wa-js/dist/chat';
+import {
+  OrderItems,
+  OrderMessageOptions,
+} from '@wppconnect/wa-js/dist/chat/functions/sendChargeMessage';
 import * as path from 'path';
 import { Page } from 'puppeteer';
 import { CreateConfig } from '../../config/create-config';
+import { PixParams } from '../../types/WAPI';
 import { convertToMP4GIF } from '../../utils/ffmpeg';
+import { isUrl } from '../../utils/isUrl';
 import {
   base64MimeType,
   downloadFileToBase64,
@@ -40,11 +46,6 @@ import { filenameFromMimeType } from '../helpers/filename-from-mimetype';
 import { Message, Wid } from '../model';
 import { ChatState } from '../model/enum';
 import { ListenerLayer } from './listener.layer';
-import {
-  OrderItems,
-  OrderMessageOptions,
-} from '@wppconnect/wa-js/dist/chat/functions/sendChargeMessage';
-import { PixParams } from '../../types/WAPI';
 
 export class SenderLayer extends ListenerLayer {
   constructor(public page: Page, session?: string, options?: CreateConfig) {
@@ -748,6 +749,39 @@ export class SenderLayer extends ListenerLayer {
         };
       },
       { to, base64, options: options as any }
+    );
+  }
+
+  /**
+   * Sends file from a link (http or https)
+   * The link must be publicly accessible
+   * CORS must be enabled on the server for the file using * or the domain of WhatsApp (web.whatsapp.com)
+   * security-policy must allow it too
+   * WA-JS will take care of fetching the file and sending it
+   */
+  public async sendFileFromUrl(
+    to: string,
+    url: string,
+    options?: FileMessageOptions
+  ) {
+    if (!isUrl(url)) {
+      throw new Error('Invalid URL');
+    }
+
+    return evaluateAndReturn(
+      this.page,
+      async ({ to, url, options }) => {
+        const result = await WPP.chat.sendFileMessage(to, url, {
+          ...options,
+        });
+
+        return {
+          ack: result.ack,
+          id: result.id,
+          sendMsgResult: await result.sendMsgResult,
+        };
+      },
+      { to, url, options }
     );
   }
 
