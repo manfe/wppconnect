@@ -15,45 +15,98 @@
  * along with WPPConnect.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import * as waVersion from '@wppconnect/wa-version';
+import axios from 'axios';
 import * as ChromeLauncher from 'chrome-launcher';
 import * as os from 'os';
 import * as path from 'path';
-import * as rimraf from 'rimraf';
-import * as waVersion from '@wppconnect/wa-version';
-import axios from 'axios';
 import { Browser, BrowserContext, Page } from 'puppeteer';
 import puppeteer from 'puppeteer-extra';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+import * as rimraf from 'rimraf';
+import { Logger } from 'winston';
+import { LoadingScreenCallback } from '../api/model';
 import { CreateConfig } from '../config/create-config';
 import { puppeteerConfig } from '../config/puppeteer.config';
-import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import { useragentOverride } from '../config/WAuserAgente';
-import { WebSocketTransport } from './websocket';
-import { Logger } from 'winston';
 import { SessionToken } from '../token-store';
-import { LoadingScreenCallback } from '../api/model';
 import { LogLevel } from '../utils/logger';
-import { sleep } from '../utils/sleep';
+import { WebSocketTransport } from './websocket';
 
 export async function unregisterServiceWorker(page: Page) {
   await page.evaluateOnNewDocument(() => {
-    // Remove existent service worker
-    navigator.serviceWorker
-      .getRegistrations()
-      .then((registrations) => {
-        for (let registration of registrations) {
-          registration.unregister();
-        }
-      })
-      .catch((err) => null);
+    const sw = navigator.serviceWorker;
+    if (!sw) {
+      console.warn('[sw-trace] navigator.serviceWorker not available');
+      return;
+    }
 
-    // Disable service worker registration
-    // @ts-ignore
-    navigator.serviceWorker.register = new Promise(() => {});
+    const originalRegister = sw.register.bind(sw);
 
-    setInterval(() => {
-      window.onerror = console.error;
-      window.onunhandledrejection = console.error;
-    }, 500);
+    const dumpRegistrations = (label: string) => {
+      return sw
+        .getRegistrations()
+        .then((registrations) => {
+          const payload = registrations.map((registration) => {
+            const toUrl = (worker?: ServiceWorker | null) =>
+              worker?.scriptURL || null;
+
+            return {
+              scope: registration.scope,
+              active: toUrl(registration.active),
+              waiting: toUrl(registration.waiting),
+              installing: toUrl(registration.installing),
+            };
+          });
+
+          console.log('[sw-trace]', label, payload);
+        })
+        .catch((error) => {
+          console.warn('[sw-trace] failed to list registrations', error);
+        });
+    };
+
+    sw.register = (...args) => {
+      console.log('[sw-trace] register called', args[0], args[1]);
+
+      return originalRegister(...args)
+        .then((registration) => {
+          console.log('[sw-trace] register resolved', {
+            scope: registration.scope,
+            active: registration.active?.scriptURL || null,
+            waiting: registration.waiting?.scriptURL || null,
+            installing: registration.installing?.scriptURL || null,
+          });
+
+          dumpRegistrations('post-register');
+
+          return registration;
+        })
+        .catch((error) => {
+          console.error('[sw-trace] register failed', error);
+          throw error;
+        });
+    };
+
+    sw.addEventListener('controllerchange', () => {
+      console.log('[sw-trace] controllerchange fired');
+      dumpRegistrations('controllerchange');
+    });
+
+    sw.addEventListener('message', (event) => {
+      console.log('[sw-trace] message from service worker', {
+        type: event.type,
+        data: event.data,
+      });
+    });
+
+    dumpRegistrations('page-start');
+
+    sw.ready
+      .then(() => dumpRegistrations('ready'))
+      .catch((error) => {
+        console.warn('[sw-trace] ready promise failed', error);
+      });
   });
 }
 
